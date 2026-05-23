@@ -1,0 +1,95 @@
+name: "Playwright Headless Capture"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install system packages for Playwright
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libnss3 libxss1 libasound2 libatk1.0-0 libatk-bridge2.0-0 \
+            libcups2 libdrm2 libxrandr2 libgbm1 libgtk-3-0 libx11-xcb1 \
+            fonts-liberation libpangocairo-1.0-0 libgdk-pixbuf2.0-0 \
+            libxcomposite1 libxdamage1 libxfixes3 libxrender1 libxinerama1 libxcursor1 \
+            ca-certificates
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r autoalpha/requirements.txt
+
+      - name: Install Playwright browsers
+        run: python -m playwright install --with-deps
+
+      - name: Run capture script headless (capture logs)
+        env:
+          CI: true
+        run: |
+          python autoalpha/scripts/test_fb_marketplace.py --query "BMW" --zip 28202 --radius 150 --duration 30 --headless > capture.log 2>&1 || true
+
+      - name: Run extractor to produce fb_listings.csv
+        env:
+          CI: true
+        run: |
+          python autoalpha/scripts/extract_fb_listings.py --output autoalpha/data/fb_listings.csv >> capture.log 2>&1 || true
+
+      - name: Run Cars.com extractor (parameterized)
+        env:
+          CI: true
+        run: |
+          python autoalpha/scripts/extract_carsdotcom.py --zip 28202 --radius 150 --make BMW --model "" --page 1 --output autoalpha/data/carsdotcom.csv >> capture.log 2>&1 || true
+
+      - name: Upload fb_payloads artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fb_payloads
+          path: autoalpha/fb_payloads
+          if-no-files-found: warn
+
+      - name: Upload storage_state artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: storage_state
+          path: autoalpha/storage_state.json
+          if-no-files-found: warn
+
+      - name: Upload fb_listings CSV
+        uses: actions/upload-artifact@v4
+        with:
+          name: fb_listings_csv
+          path: autoalpha/data/fb_listings.csv
+          if-no-files-found: warn
+
+      - name: Upload carsdotcom CSV
+        uses: actions/upload-artifact@v4
+        with:
+          name: carsdotcom_csv
+          path: autoalpha/data/carsdotcom.csv
+          if-no-files-found: warn
+
+      - name: Upload data directory (fallback)
+        uses: actions/upload-artifact@v4
+        with:
+          name: data_csvs
+          path: autoalpha/data
+          if-no-files-found: warn
+
+      - name: Upload capture logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture_log
+          path: capture.log
+          if-no-files-found: warn
